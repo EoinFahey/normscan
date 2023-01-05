@@ -1,93 +1,122 @@
 """
-Normtest function - Coded in R
+Normscan function
 
-Automatically scans a data frame to tell you which
-variables are normally distributed and which
-aren't at a 0.05 error level
+Scans a data frame and produces an output to tell the
+user which variables in the data frame are normally
+distributed and which aren't
 
-(Good for general checks but data could be close to
-normally distributed without you noticing if you use
-this)
+Author: Eoin Fahey (04/01/2023)
 """
+
+setwd('C:/Users/Eoin/Documents/Important/Work/Github portfolio')
+
+# Test data
+data = read.csv('normscan_testdata.csv')
+
 
 # Install prerequisite packages
 install.packages(nortest)
 library(nortest)
 
 
-# Read in data
-setwd('C:/Users/...')
-data = read.csv('listings.csv')
+normscan = function(data, alpha){
+    # Retrieve all numeric variables in data frame
+    varnames_list = get_variable_names(data)
+    
+    # Filter these variables into parametric/non-parametric
+    par_nonpar_list = normtest_filter(varnames_list, alpha)
+
+    printout(par_nonpar_list, alpha)
+}
 
 
-# Normscan function
-normscan = function(data){
-    # Create string: 'data$'
-    frame_name = deparse(substitute(data))
-    frame_sub = paste(frame_name, '$', sep = '')
-
-    # Get list of all numeric/integer variables in data frame
-    varnames_list = list()
-
-    for (i in 1:NCOL(data)){
-        # Create command: data$variable
-        vars = data.frame(colnames(data))
-        subset_string = paste(frame_sub, vars[i,], sep = '')
-        varnames_list[[i]] = subset_string
-        var_command = (eval(parse(text = varnames_list[[i]])))
+    get_variable_names = function(data){
+        # Create string: 'data$'
+        frame_name = deparse(substitute(data))
+        frame_sub = paste(frame_name, '$', sep = '')
         
-        # Delete non-numeric/non-integer variables from list
-        if (class(var_command) != 'numeric' & class(var_command) != 'integer'){
-            varnames_list[[i]] = NULL
+        # Get list of all numeric/integer variables in data frame
+        varnames_list = list()
+        
+        for (i in 1:NCOL(data)){
+            # Create command: data$variable
+            vars = data.frame(colnames(data))
+            subset_string = paste(frame_sub, vars[i,], sep = '')
+            varnames_list[[i]] = subset_string
+            var_command = (eval(parse(text = varnames_list[[i]])))
+            
+            # Delete non-numeric/non-integer variables from list
+            if (class(var_command) != 'numeric' & class(var_command) != 'integer'){
+                varnames_list[[i]] = NULL
+            }
         }
+        
+        # Remove null values from numeric variables list
+        names(varnames_list) = seq_along(varnames_list)
+        varnames_list = Filter(Negate(is.null), varnames_list)
+        
+        return(varnames_list)
     }
 
-    # Remove null values from numeric variables list
-    names(varnames_list) = seq_along(varnames_list)
-    varnames_list = Filter(Negate(is.null), varnames_list)
 
-    # Create seperate lists for parametric/non-parametric data
-    nonpar_list = list()
-    par_list = list()
+    normtest_filter = function(varnames_list, alpha){
+        # Create seperate lists for parametric/non-parametric variables
+        nonpar_list = list()
+        par_list = list()
 
-    # Filter variables into each list
-    for (i in 1:NROW(varnames_list)){
+        # Filter variables into each list
+        for (i in 1:NROW(varnames_list)){
 
-        # Turn data$variable into a command
-        call_variable = eval(parse(text = varnames_list[[1]]))
-        call_variable = na.omit(call_variable)
+            # Turn data$variable into a command
+            call_variable = eval(parse(text = varnames_list[[i]]))
+            call_variable = na.omit(call_variable)
 
-        # Apply Anderson-Darling test to long variables
-        # Filter variables into parametric and non-parametric lists
-        if (NROW(call_variable) >= 5000){
-            if (ad.test(call_variable)[[2]] >= 0.05){
-                par_list[[i]] = varnames_list[[i]]}
-            if (ad.test(call_variable)[[2]] < 0.05){
-                nonpar_list[[i]] = varnames_list[[i]]}
+            # Apply Shapiro test to variables n < 5000
+            if ((NROW(call_variable) < 5000) & (NROW(call_variable) > 3)){
+                if ((shapiro.test(call_variable)[[2]] < alpha) == FALSE) 
+                    {par_list[[i]] = varnames_list[[i]]}
+                if ((shapiro.test(call_variable)[[2]] < alpha) == TRUE) 
+                    {nonpar_list[[i]] = varnames_list[[i]]}
+            }
+
+            # Apply Anderson-Darling test to variables n > 5000
+            if (NROW(call_variable) > 4999){
+                if ((ad.test(call_variable)[[2]] < alpha) == FALSE) 
+                    {par_list[[i]] = varnames_list[[i]]}
+                if ((ad.test(call_variable)[[2]] < alpha) == TRUE) 
+                    {nonpar_list[[i]] = varnames_list[[i]]}
+            }
+            
         }
 
-        # Apply Shapiro-Wilk test to short variables
-        # Filter variables into parametric and non-parametric lists
-        if (NROW(call_variable) < 5000){
-            if (shapiro.test(call_variable)[[2]] >= 0.05){
-                par_list[[i]] = varnames_list[[i]]}
-            if (shapiro.test(call_variable)[[2]] < 0.05){
-                nonpar_list[[i]] = varnames_list[[i]]}
+        par_list = par_list[!sapply(par_list,is.null)]
+        nonpar_list = nonpar_list[!sapply(nonpar_list,is.null)]
+
+        my_list_names = c("par_list", "nonpar_list")
+        par_nonpar_list = list()
+        
+        for (i in 1:length(my_list_names)){
+            par_nonpar_list[[i]] = get(my_list_names[i])
         }
+        
+        return(par_nonpar_list)
     }
 
-    # Function output
-    printout = function(){
+
+    printout = function(par_nonpar_list, alpha){
+        # R output
         cat('\nNormscan function output\n')
         cat('\n Variables n > 5000 use Anderson-Darling normality test')
         cat('\n Variables n < 5000 use Shapiro-Wilk normality test')
-        cat('\n alpha = 0.5')
+        cat('\n alpha =', alpha)
         cat('\n\nPARAMETRIC VARIABLES:\n')
-        if (NROW(par_list) > 0){
-            do.call(rbind.data.frame, par_list)[,1]}
+
+        for (i in par_nonpar_list[[1]]){print(i)}
+
         cat('\n\nNON-PARAMETRIC VARIABLES:\n')
-        if (NROW(nonpar_list) > 0){
-            do.call(rbind.data.frame, nonpar_list)[,1]}
+
+        for (i in par_nonpar_list[[2]]){print(i)}
     }
-    printout()
-}
+
+
+normscan(data, 0.05)
